@@ -1,0 +1,18 @@
+﻿Versao: v1
+Data: 2025-11-14
+Script: loadtest/k6-transfer.js (1.000.000 rpm)
+Comando: "C:\Program Files\k6\k6.exe" run -e BASE_URL=http://localhost:8080 loadtest/k6-transfer.js
+
+Resumo do k6:
+- transfer_success: 96.19% (330818/343911)
+- http_req_failed: 3.80% (13093/343911)
+- http_req_duration p95: 709.55ms, p99: 1.23s
+- Iteracoes executadas: 343911, iteracoes derrubadas: 934785
+- VUs maximos: 5204
+- Alvo: 16.666 req/s (1.000.000 rpm); realizado ~4.029 req/s (aprox. 242k rpm) durante 1m55s
+- Erro predominante: connectex (conexao recusada em localhost:8080)
+- Execucao interrompida manualmente apos ~1m55s
+
+Observacoes:
+1. Aplicacao nao estava aceitando conexoes durante parte do teste; necessario subir o Spring Boot antes de iniciar o k6 para reduzir http_req_failed.
+2. Apesar das falhas de conexao, a API respondeu com sucesso para 96% das requisicoes que chegaram (HTTP 202).
