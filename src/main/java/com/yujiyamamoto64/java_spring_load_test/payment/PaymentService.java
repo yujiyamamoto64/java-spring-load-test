@@ -8,6 +8,10 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +19,9 @@ import reactor.core.publisher.Mono;
 
 @Service
 public class PaymentService {
+
+	private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
+	private static final long LOG_CHUNK = 100_000;
 
 	private final InMemoryAccountStore accountStore;
 	private final Instant startInstant = Instant.now();
@@ -25,6 +32,7 @@ public class PaymentService {
 	private final LongAdder totalLatencyMicros = new LongAdder();
 	private final Duration idempotencyTtl;
 	private final ConcurrentMap<String, CachedResponse> idempotencyCache = new ConcurrentHashMap<>();
+	private final AtomicLong nextLogAt = new AtomicLong(LOG_CHUNK);
 
 	public PaymentService(InMemoryAccountStore accountStore,
 			@Value("${payments.idempotency-ttl-seconds:120}") long idempotencyTtlSeconds) {
@@ -79,6 +87,7 @@ public class PaymentService {
 
 		var processingMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTimeNanos);
 		totalLatencyMicros.add(processingMicros);
+		logProgressIfNeeded();
 
 		return new TransferResponse(
 				request.idempotencyKey(),
@@ -114,6 +123,16 @@ public class PaymentService {
 	private void cleanExpiredIdempotencyEntries() {
 		var threshold = System.nanoTime();
 		idempotencyCache.entrySet().removeIf(entry -> entry.getValue().isExpired(threshold));
+	}
+
+	private void logProgressIfNeeded() {
+		var target = nextLogAt.get();
+		var processed = totalRequests.sum();
+		if (processed >= target && nextLogAt.compareAndSet(target, target + LOG_CHUNK)) {
+			var success = successfulRequests.sum();
+			var failed = rejectedRequests.sum();
+			log.info("{} requisicoes - success: {} - failed: {}", processed, success, failed);
+		}
 	}
 
 	private record CachedResponse(TransferResponse response, long expiresAtNanos) {

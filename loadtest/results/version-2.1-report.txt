@@ -1,0 +1,17 @@
+﻿Versao: v2.1 (5000 req/s com tuning Netty/JVM)
+Data: 2025-11-14
+Script: loadtest/k6-transfer.js (env REQUESTS_PER_SECOND=5000)
+Comando: "C:\Program Files\k6\k6.exe" run -e BASE_URL=http://localhost:8080 -e REQUESTS_PER_SECOND=5000 loadtest/k6-transfer.js
+
+Resumo do k6:
+- transfer_success: 97.52% (196478/201467)
+- http_req_failed: 2.47% (4989/201467)
+- http_req_duration p95: 1.17s, p99: 1.87s
+- Iteracoes executadas: 201467, iteracoes derrubadas: 168860
+- VUs maximos: 4261
+- Execucao interrompida manualmente apos ~1m06s (warmup nao completou)
+
+Observacoes:
+1. Mesmo com GC/JVM ajustados, o servidor ficou saturado: queda de throughput (despencou para ~3k req/s) e ~2,5% de falhas no k6, indicando backpressure no cliente.
+2. Latencias p95/p99 pioraram consideravelmente (1.17s/1.87s). Recomenda-se revisar configuração de Netty (remover options nao suportadas no Windows) e ajustar `payments.preload-accounts`/buffers para reduzir pausas longas.
+3. Validar uma nova bateria somente apos garantir que a aplicacao reage a 5k req/s com steady-state (log `PaymentService` sugere sucesso interno, mas falhas no cliente permanecem elevadas).

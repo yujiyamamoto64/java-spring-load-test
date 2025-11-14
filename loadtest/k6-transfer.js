@@ -5,8 +5,11 @@ import { Rate, Trend } from 'k6/metrics';
 export const transferSuccess = new Rate('transfer_success');
 export const transferDuration = new Trend('transfer_duration');
 
-const REQUESTS_PER_MINUTE = 1_000_000;
-const RATE_PER_SECOND = Math.floor(REQUESTS_PER_MINUTE / 60);
+const REQUESTS_PER_MINUTE = Number(__ENV.REQUESTS_PER_MINUTE || 1_000_000);
+const REQUESTS_PER_SECOND = Number(__ENV.REQUESTS_PER_SECOND || 0);
+const RATE_PER_SECOND = Math.floor(
+  REQUESTS_PER_SECOND > 0 ? REQUESTS_PER_SECOND : REQUESTS_PER_MINUTE / 60,
+);
 
 export const options = {
   discardResponseBodies: true,

@@ -39,3 +39,9 @@ O arquivo `loadtest/k6-transfer.js` define dois cenarios: aquecimento progressiv
 4. **Observabilidade**: monitore `transfer_success` no k6, `http.server.requests` no Actuator e `GET /api/transfers/stats` para identificar quedas de throughput ou aumento de latencia.
 
 Siga `JavaSpringLoadTestApplication` para incluir integracoes reais (fila, banco) preservando o padrao nao bloqueante.
+
+## Tuning aplicado na versao 2
+
+- O `spring-boot-maven-plugin` ja inicia a aplicacao com `-Xms2g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+AlwaysActAsServerClassMachine`. Altere via `-Dapp.jvm.args=\"...\"` se quiser outro perfil.
+- O `NettyTuningConfig` fixa `LoopResources` dedicados, backlog em 65k, keep-alive agressivo e buffers de 1MB para reduzir o custo por conexao.
+- Rode `powershell -ExecutionPolicy Bypass -File .\\scripts\\windows-tuning.ps1` como Administrador para aumentar o range de portas efemeras, reduzir `TcpTimedWaitDelay` e habilitar RSS antes dos testes k6.

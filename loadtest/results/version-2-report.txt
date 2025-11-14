@@ -1,0 +1,17 @@
+﻿Versao: v2 (5000 req/s alvo)
+Data: 2025-11-14
+Script: loadtest/k6-transfer.js (env REQUESTS_PER_SECOND=5000)
+Comando: "C:\Program Files\k6\k6.exe" run -e BASE_URL=http://localhost:8080 -e REQUESTS_PER_SECOND=5000 loadtest/k6-transfer.js
+
+Resumo do k6:
+- transfer_success: 99.59% (353604/355027)
+- http_req_failed: 0.40% (1423/355027)
+- http_req_duration p95: 241.41ms, p99: 370.67ms
+- Iteracoes executadas: 355027, iteracoes derrubadas: 13250
+- VUs maximos: 2274
+- Execucao interrompida manualmente apos ~1m04s (warmup nao completou)
+
+Observacoes:
+1. Metricas de sucesso atenderam a meta (>99%), mesmo com ~1,4k falhas (timeouts/conexao) ao entrar/encerrar o teste.
+2. Latencias P95/P99 acima dos thresholds configurados (15/30ms) indicam necessidade de ajustes (Netty/JVM/infra) antes de subir o alvo novamente.
+3. Os logs de progresso no servidor mostram 0 fails internos; as falhas relatadas pelo k6 foram no cliente.
