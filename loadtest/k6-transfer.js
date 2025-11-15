@@ -5,7 +5,7 @@ import { Rate, Trend } from 'k6/metrics';
 export const transferSuccess = new Rate('transfer_success');
 export const transferDuration = new Trend('transfer_duration');
 
-const REQUESTS_PER_MINUTE = Number(__ENV.REQUESTS_PER_MINUTE || 1_000_000);
+const REQUESTS_PER_MINUTE = Number(__ENV.REQUESTS_PER_MINUTE || 1000000);
 const REQUESTS_PER_SECOND = Number(__ENV.REQUESTS_PER_SECOND || 0);
 const RATE_PER_SECOND = Math.floor(
   REQUESTS_PER_SECOND > 0 ? REQUESTS_PER_SECOND : REQUESTS_PER_MINUTE / 60,
@@ -18,9 +18,9 @@ export const options = {
       executor: 'constant-arrival-rate',
       rate: RATE_PER_SECOND,
       timeUnit: '1s',
-      duration: '60s',
-      preAllocatedVUs: 2000,
-      maxVUs: 10000,
+      duration: __ENV.DURATION || '60s',
+      preAllocatedVUs: Number(__ENV.PREALLOCATED_VUS || 2000),
+      maxVUs: Number(__ENV.MAX_VUS || 10000),
     },
     warmup: {
       executor: 'ramping-arrival-rate',
@@ -41,6 +41,10 @@ export const options = {
   },
   summaryTrendStats: ['avg', 'min', 'max', 'p(95)', 'p(99)'],
 };
+
+if (__ENV.SKIP_WARMUP === 'true') {
+  delete options.scenarios.warmup;
+}
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const ACCOUNTS = __ENV.ACCOUNTS || 250000;

@@ -16,20 +16,77 @@ Este projeto demonstra uma API de transferencia bancaria com Spring Boot WebFlux
 ./mvnw spring-boot:run
 ```
 
-Para conectar ao Aurora/PostgreSQL na AWS, defina o profile `aws` e variáveis de ambiente com o endpoint Secret Manager:
+> Versão 4: a aplicação agora foca apenas nos ambientes **local** (PostgreSQL via Docker) e **Railway**. Todo o conteúdo da versão 3 sobre AWS/Aurora/Fargate foi removido para simplificar o setup.
+
+### Banco PostgreSQL local com Docker
+
+Use `docker-compose.db.yml` para subir um PostgreSQL local com o mesmo schema usado no Aurora:
 
 ```bash
-export SPRING_PROFILES_ACTIVE=aws
-export SPRING_DATASOURCE_URL="jdbc:postgresql://database-1.cluster-cc3cosc4w9th.us-east-1.rds.amazonaws.com:5432/postgres"
-export SPRING_DATASOURCE_USERNAME="postgres"
-export SPRING_DATASOURCE_PASSWORD="<senha do Secrets Manager>"
+docker compose -f docker-compose.db.yml up -d
+```
+
+O compose cria o banco `loadtest` expondo a porta `15432` no host (mapeada para `5432` no container) com usuário/senha `loadtest`. Se quiser outro valor, edite `docker-compose.db.yml`. O arquivo `schema.sql` é carregado automaticamente por estar montado em `/docker-entrypoint-initdb.d`.
+
+Depois de subir o container, a aplicação deve rodar com o profile `local`, que já aponta para `jdbc:postgresql://localhost:15432/loadtest` com usuário/senha `loadtest`, então nenhuma variável adicional é necessária:
+
+```bash
+export SPRING_PROFILES_ACTIVE=local
 ./mvnw spring-boot:run
 ```
+
+ou
+
+```bash
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+Se precisar customizar usuário/senha/porta, use as variáveis `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATASOURCE_MAX_POOL_SIZE` e `SPRING_DATASOURCE_MIN_IDLE` quando iniciar o app.
+
+> Observação: o arquivo `.env` agora traz um exemplo com o profile `local`. Copie-o para `.env.local` se quiser manter credenciais diferentes por máquina.
+
+Para desligar e remover os dados do container, execute `docker compose -f docker-compose.db.yml down -v`.
 
 Endpoints principais:
 
 - `POST /api/transfers` recebe JSON com `idempotencyKey`, `fromAccount`, `toAccount`, `amountInCents` e `currency`.
 - `GET /api/transfers/stats` retorna vazao, media de latencia e volume processado.
+
+## Deploy no Railway
+
+O Railway detecta automaticamente o `Dockerfile` e define `PORT` para o processo. O profile `railway` (arquivo `application-railway.properties`) usa as variáveis `PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE` que o plugin de Postgres disponibiliza.
+
+1. Instale a CLI (`npm i -g railway` ou baixe do site) e faça login:
+   ```bash
+   railway login
+   ```
+2. Inicialize o projeto e conecte este repositório:
+   ```bash
+   railway init --project java-spring-load-test
+   railway link
+   ```
+3. Provisione o Postgres gerenciado pelo Railway (gera `PG*` e `DATABASE_URL` automaticamente):
+   ```bash
+   railway add postgres
+   ```
+4. Defina as variáveis do serviço para usar o profile `railway` (opcionalmente ajuste JVM):
+   ```bash
+   railway variables set SPRING_PROFILES_ACTIVE=railway JAVA_OPTS="-Xms2g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+AlwaysActAsServerClassMachine"
+   ```
+5. Faça o build/deploy usando o Dockerfile existente:
+   ```bash
+   railway up --service api
+   ```
+6. Acompanhe os logs com `railway logs` e copie o domínio gerado (`https://<app>.up.railway.app`). Essa URL será usada no k6:
+   ```bash
+   k6 run -e BASE_URL=https://<app>.up.railway.app loadtest/k6-transfer.js
+   ```
+
+### Banco PostgreSQL no Railway
+
+- O comando `railway add postgres` já cria o banco e injeta variáveis `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` e `DATABASE_URL` na aplicação.
+- O profile `railway` converte essas variáveis em propriedades do Spring, criando as tabelas definidas em `schema.sql` automaticamente (`spring.sql.init.mode=always`).
+- Se quiser usar um Postgres externo, basta definir `SPRING_DATASOURCE_URL/USERNAME/PASSWORD` na aba *Variables* ou via `railway variables set`.
 
 ## Teste de carga (1M rpm)
 
@@ -56,10 +113,9 @@ Siga `JavaSpringLoadTestApplication` para incluir integracoes reais (fila, banco
 - O `NettyTuningConfig` fixa `LoopResources` dedicados, backlog em 65k, keep-alive agressivo e buffers de 1MB para reduzir o custo por conexao.
 - Rode `powershell -ExecutionPolicy Bypass -File .\\scripts\\windows-tuning.ps1` como Administrador para aumentar o range de portas efemeras, reduzir `TcpTimedWaitDelay` e habilitar RSS antes dos testes k6.
 
-## Versao 3: migrando para AWS (Aurora + Fargate)
+## Versao 4: Railway + ambientes locais
 
-- O código de versao 3 grava contas/transacoes no Postgres. As tabelas são criadas a partir de `schema.sql` (`accounts` e `transfers`) com `INSERT ... ON CONFLICT` para garantir idempotencia por `idempotency_key`.
-- Provisionamento do banco: crie um Aurora PostgreSQL Serverless v2 (versao 17.4), com template Dev/Test, storage `Aurora Standard`, sem replica, capacidade 0.5–128 ACUs, VPC privada e acesso restrito a security groups do ECS. Guarde o secret gerado (`rds!cluster-...`) para obter usuario/senha.
-- Ajuste o profile `aws` ou o `.env` com as variaveis `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` e `SPRING_DATASOURCE_PASSWORD` usando o endpoint `database-1.cluster-cc3cosc4w9th.us-east-1.rds.amazonaws.com`.
-- Construa a imagem com o `Dockerfile` e publique no ECR. Crie um cluster ECS com launch type Fargate, task definition usando `SPRING_PROFILES_ACTIVE=aws` e variaveis lidas do Secrets Manager.
-- Suba um Serviço Fargate (de preferencia ligado a um Application Load Balancer) e execute o k6 de uma instância EC2 na mesma região (us-east-1) para minimizar latência.
+- O foco oficial é rodar localmente (profile `local`, PostgreSQL via Docker) ou no Railway (profile `railway`). Para outras infraestruturas copie `application-railway.properties` e ajuste as credenciais necessárias.
+- A documentação de AWS/Aurora/Fargate da versão anterior foi removida para simplificar o onboarding.
+- O `.env` serve apenas como exemplo de configuração local; em produção use o painel do Railway para definir as variáveis (ou `railway variables set`).
+- O guia de deploy acima mostra todo o fluxo recomendado (provisionar Postgres gerenciado no Railway, apontar o profile `railway` e executar `railway up`).
