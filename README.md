@@ -16,6 +16,16 @@ Este projeto demonstra uma API de transferencia bancaria com Spring Boot WebFlux
 ./mvnw spring-boot:run
 ```
 
+Para conectar ao Aurora/PostgreSQL na AWS, defina o profile `aws` e variáveis de ambiente com o endpoint Secret Manager:
+
+```bash
+export SPRING_PROFILES_ACTIVE=aws
+export SPRING_DATASOURCE_URL="jdbc:postgresql://database-1.cluster-cc3cosc4w9th.us-east-1.rds.amazonaws.com:5432/postgres"
+export SPRING_DATASOURCE_USERNAME="postgres"
+export SPRING_DATASOURCE_PASSWORD="<senha do Secrets Manager>"
+./mvnw spring-boot:run
+```
+
 Endpoints principais:
 
 - `POST /api/transfers` recebe JSON com `idempotencyKey`, `fromAccount`, `toAccount`, `amountInCents` e `currency`.
@@ -45,3 +55,11 @@ Siga `JavaSpringLoadTestApplication` para incluir integracoes reais (fila, banco
 - O `spring-boot-maven-plugin` ja inicia a aplicacao com `-Xms2g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:+AlwaysActAsServerClassMachine`. Altere via `-Dapp.jvm.args=\"...\"` se quiser outro perfil.
 - O `NettyTuningConfig` fixa `LoopResources` dedicados, backlog em 65k, keep-alive agressivo e buffers de 1MB para reduzir o custo por conexao.
 - Rode `powershell -ExecutionPolicy Bypass -File .\\scripts\\windows-tuning.ps1` como Administrador para aumentar o range de portas efemeras, reduzir `TcpTimedWaitDelay` e habilitar RSS antes dos testes k6.
+
+## Versao 3: migrando para AWS (Aurora + Fargate)
+
+- O código de versao 3 grava contas/transacoes no Postgres. As tabelas são criadas a partir de `schema.sql` (`accounts` e `transfers`) com `INSERT ... ON CONFLICT` para garantir idempotencia por `idempotency_key`.
+- Provisionamento do banco: crie um Aurora PostgreSQL Serverless v2 (versao 17.4), com template Dev/Test, storage `Aurora Standard`, sem replica, capacidade 0.5–128 ACUs, VPC privada e acesso restrito a security groups do ECS. Guarde o secret gerado (`rds!cluster-...`) para obter usuario/senha.
+- Ajuste o profile `aws` ou o `.env` com as variaveis `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` e `SPRING_DATASOURCE_PASSWORD` usando o endpoint `database-1.cluster-cc3cosc4w9th.us-east-1.rds.amazonaws.com`.
+- Construa a imagem com o `Dockerfile` e publique no ECR. Crie um cluster ECS com launch type Fargate, task definition usando `SPRING_PROFILES_ACTIVE=aws` e variaveis lidas do Secrets Manager.
+- Suba um Serviço Fargate (de preferencia ligado a um Application Load Balancer) e execute o k6 de uma instância EC2 na mesma região (us-east-1) para minimizar latência.
